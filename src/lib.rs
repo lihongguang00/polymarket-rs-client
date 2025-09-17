@@ -453,6 +453,29 @@ impl ClobClient {
             )
     }
 
+    pub async fn place_limit_order(&self, order_args: OrderArgs, expiration: Option<u64>, order_type: OrderType) -> AppResult<Value> {
+        let signed_order = self
+            .client
+            .create_order(&order_args, expiration, None, None)
+            .await
+            .into_report()
+            .map_err(|e| e.change_context(Error::Unknown))?;
+        
+        let order = self
+            .client
+            .post_order(signed_order, order_type)
+            .await
+            .into_report();
+        
+        if let Err(e) = order {
+            tracing::error!("Error placing order: {:?}", e);
+            
+            return Err(report!(Error::Unknown).attach_printable(format!("Error placing order: {:?}", e)));
+        }
+        
+        Ok(order.unwrap())
+    }
+
     pub async fn get_order_book(&self, token_id: &str) -> ClientResult<OrderBookSummary> {
         Ok(self
             .http_client
