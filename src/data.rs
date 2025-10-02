@@ -399,18 +399,32 @@ pub struct Token {
     pub outcome: String,
 }
 
+fn deserialize_empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<Decimal>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        s.parse::<Decimal>().map(Some).map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderResponse {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_msg: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "orderID")]
     pub order_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order_hashes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_empty_string_as_none")]
+    pub taking_amount: Option<Decimal>
 }
 
 pub type BatchOrderResponse = Vec<OrderResponse>;

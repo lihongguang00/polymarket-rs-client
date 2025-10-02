@@ -453,29 +453,6 @@ impl ClobClient {
             )
     }
 
-    pub async fn place_limit_order(&self, order_args: OrderArgs, expiration: Option<u64>, order_type: OrderType) -> AppResult<Value> {
-        let signed_order = self
-            .client
-            .create_order(&order_args, expiration, None, None)
-            .await
-            .into_report()
-            .map_err(|e| e.change_context(Error::Unknown))?;
-        
-        let order = self
-            .client
-            .post_order(signed_order, order_type)
-            .await
-            .into_report();
-        
-        if let Err(e) = order {
-            tracing::error!("Error placing order: {:?}", e);
-            
-            return Err(report!(Error::Unknown).attach_printable(format!("Error placing order: {:?}", e)));
-        }
-        
-        Ok(order.unwrap())
-    }
-
     pub async fn get_order_book(&self, token_id: &str) -> ClientResult<OrderBookSummary> {
         Ok(self
             .http_client
@@ -559,15 +536,32 @@ impl ClobClient {
     ) -> ClientResult<OrderResponse> {
         let (signer, creds) = self.get_l2_parameters();
         let body = PostOrder::new(order, creds.api_key.clone(), order_type);
-
-        let method = Method::POST;
         let endpoint = "/order";
 
-        let headers = create_l2_headers(signer, creds, method.as_str(), endpoint, Some(&body))?;
+        let headers = create_l2_headers(
+            signer, 
+            creds, 
+            Method::POST.as_str(), 
+            endpoint, 
+            Some(&body)
+        )?;
 
-        let req = self.create_request_with_headers(method, endpoint, headers.into_iter());
+        let response = self
+            .create_request_with_headers(Method::POST, endpoint, headers.into_iter())
+            .json(&body)
+            .send()
+            .await?;
 
-        Ok(req.json(&body).send().await?.json::<OrderResponse>().await?)
+        let status = response.status();
+        let response_text = response.text().await?;
+
+        if !status.is_success() {
+            println!("Error response ({}): {}", status, response_text);
+            return Err(anyhow!("API request failed with status {}: {}", status, response_text));
+        }
+
+        println!("Success response: {}", response_text);
+        Ok(serde_json::from_str(&response_text)?)
     }
 
     pub async fn post_order_batch(
